@@ -13,7 +13,11 @@ import { defaultProfile } from '../utils/template'
 import { decryptAgeContent } from '../utils/age'
 import { DEFAULT_MIHOMO_PORTS } from '../../shared/appConfig'
 import { subStorePort } from '../resolve/server'
-import { mihomoCloseAllConnections, mihomoHotReloadConfig } from '../core/mihomoApi'
+import {
+  mihomoCloseAllConnections,
+  mihomoHotReloadConfig,
+  mihomoProxyProviders
+} from '../core/mihomoApi'
 import { checkProfileConfig, restartCore, type CheckProfileOptions } from '../core/manager'
 import { generateProfile, globalOverrideIdsNow } from '../core/factory'
 import { addProfileUpdater, removeProfileUpdater } from '../core/profileUpdater'
@@ -32,6 +36,11 @@ import { getAppConfig } from './app'
 import { getControledMihomoConfig } from './controledMihomo'
 import { getPluginItem, pluginSchedule } from './plugin'
 import { runtimeConfigWriteQueue } from './runtimeConfigQueue'
+import {
+  httpProviderNames,
+  pickProviderSubscriptionInfo,
+  sameSubscriptionInfo
+} from './providerSubscription'
 
 const profileLogger = createLogger('Profile')
 const execFilePromise = promisify(execFile)
@@ -358,6 +367,32 @@ async function removeProfileItemSteps(id: string): Promise<IProfileItem | undefi
   return removedItem
 }
 
+// For the running remote profile without a subscription-userinfo header, take traffic/expiry
+// from its proxy-providers as reported by the core (last http provider in profile order).
+// Header-provided info is never overwritten. Returns true when the profile item was updated.
+export async function syncCurrentProfileProviderInfo(): Promise<boolean> {
+  const item = await getCurrentProfileItem()
+  if (item.type !== 'remote') return false
+  if (item.extra && item.extraSource !== 'provider') return false
+  const order = httpProviderNames(await getProfileStr(item.id))
+  if (order.length === 0) return false
+  const { providers } = await mihomoProxyProviders()
+  const info = pickProviderSubscriptionInfo(providers, order)
+  if (!info || sameSubscriptionInfo(info, item.extra)) return false
+  let updated = false
+  await updateProfileConfig((config) => {
+    const target = config.items.find((i) => i.id === item.id)
+    // re-check inside the write queue: a header-based update may have landed meanwhile
+    if (target && (!target.extra || target.extraSource === 'provider')) {
+      target.extra = info
+      target.extraSource = 'provider'
+      updated = true
+    }
+    return config
+  })
+  return updated
+}
+
 export async function getCurrentProfileItem(): Promise<IProfileItem> {
   const { current } = await getProfileConfig()
   return (
@@ -632,6 +667,10 @@ export async function createProfile(item: Partial<IProfileItem>): Promise<IProfi
     }
     if (headers['subscription-userinfo']) {
       newItem.extra = parseSubinfo(headers['subscription-userinfo'])
+    } else if (item.extraSource === 'provider' && item.extra) {
+      // keep the last provider-derived info until the core reports a fresh value
+      newItem.extra = item.extra
+      newItem.extraSource = 'provider'
     }
 
     await validateProfileCandidate(newItem, data)

@@ -611,6 +611,9 @@ interface IProfileItem {
   override?: string[]
   useProxy?: boolean
   extra?: ISubscriptionUserInfo
+  // 'provider': extra was taken from the core's proxy-provider subscription info because the
+  // subscription response had no subscription-userinfo header (undefined: from the header)
+  extraSource?: 'provider'
   substore?: boolean
   allowFixedInterval?: boolean
   autoUpdate?: boolean

@@ -44,6 +44,7 @@ const validInvokeChannels = [
   'getProfileConfig',
   'setProfileConfig',
   'getCurrentProfileItem',
+  'syncCurrentProfileProviderInfo',
   'getProfileItem',
   'getProfileStr',
   'setProfileStr',

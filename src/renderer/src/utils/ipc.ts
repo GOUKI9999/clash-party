@@ -71,6 +71,7 @@ interface IpcApi {
   getProfileConfig: (force?: boolean) => Promise<IProfileConfig>
   setProfileConfig: (config: IProfileConfig) => Promise<void>
   getCurrentProfileItem: () => Promise<IProfileItem>
+  syncCurrentProfileProviderInfo: () => Promise<boolean>
   getProfileItem: (id: string | undefined) => Promise<IProfileItem>
   getProfileStr: (id: string) => Promise<string>
   setProfileStr: (id: string, str: string) => Promise<void>
@@ -325,6 +326,7 @@ export const {
   getProfileConfig,
   setProfileConfig,
   getCurrentProfileItem,
+  syncCurrentProfileProviderInfo,
   getProfileItem,
   getProfileStr,
   setProfileStr,

@@ -27,6 +27,7 @@ import {
   readTextFile,
   subStoreCollections,
   subStoreSubs,
+  syncCurrentProfileProviderInfo,
   updatePluginProfile
 } from '@renderer/utils/ipc'
 import type { KeyboardEvent } from 'react'
@@ -71,6 +72,25 @@ const Profiles: React.FC = () => {
   } = appConfig || {}
   const { current, items = [] } = profileConfig || {}
   const navigate = useNavigate()
+
+  // Profiles without a subscription-userinfo header (proxy-provider configs) get traffic/expiry
+  // from the running core's providers. Providers load a few seconds after a switch, so repeat.
+  useEffect(() => {
+    let cancelled = false
+    const sync = async (): Promise<void> => {
+      try {
+        if ((await syncCurrentProfileProviderInfo()) && !cancelled) mutateProfileConfig()
+      } catch {
+        // core not running or providers not loaded yet
+      }
+    }
+    sync()
+    const timer = setInterval(sync, 30000)
+    return (): void => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [current, mutateProfileConfig])
   const [sortedItems, setSortedItems] = useState(items)
   const [useProxy, setUseProxy] = useState(false)
   const [authToken, setAuthToken] = useState('')

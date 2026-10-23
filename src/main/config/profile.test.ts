@@ -10,6 +10,7 @@ import {
   getProfileConfig,
   getProfileItem,
   removeProfileItem,
+  syncCurrentProfileProviderInfo,
   updateProfileConfig,
   updateProfileItem,
   upsertPluginProfile,
@@ -36,6 +37,7 @@ const mocks = vi.hoisted(() => ({
   beforeWrite: vi.fn(),
   generateProfile: vi.fn(),
   hotReload: vi.fn(),
+  proxyProviders: vi.fn(),
   restartCore: vi.fn(),
   yamlMaxAliasCount: 100
 }))
@@ -102,7 +104,8 @@ vi.mock('../utils/logger', () => ({
 vi.mock('../resolve/server', () => ({ subStorePort: 8299 }))
 vi.mock('../core/mihomoApi', () => ({
   mihomoCloseAllConnections: vi.fn(),
-  mihomoHotReloadConfig: mocks.hotReload
+  mihomoHotReloadConfig: mocks.hotReload,
+  mihomoProxyProviders: mocks.proxyProviders
 }))
 vi.mock('../core/manager', () => ({
   checkProfileConfig: mocks.checkProfileConfig,
@@ -712,5 +715,59 @@ describe('plugin subscription validation follow-ups (V7 regressions)', () => {
       interval: 30,
       autoUpdate: false
     })
+  })
+})
+
+describe('syncCurrentProfileProviderInfo', () => {
+  const providerProfile = [
+    'proxy-providers:',
+    '  First:',
+    '    type: http',
+    '    url: https://a.example/sub',
+    '  Last:',
+    '    type: http',
+    '    url: https://b.example/sub',
+    'proxy-groups: []',
+    'rules: []'
+  ].join('\n')
+  const providerInfo = (total: number): IMihomoProxyProvider => ({
+    name: 'p',
+    type: 'Proxy',
+    vehicleType: 'HTTP',
+    expectedStatus: '*',
+    subscriptionInfo: { Upload: 1, Download: 2, Total: total, Expire: 1800000000 }
+  })
+
+  beforeEach(() => {
+    writeFileSync(join(testDir, 'profiles', 'remote.yaml'), providerProfile)
+    mocks.proxyProviders.mockResolvedValue({
+      providers: { First: providerInfo(100), Last: providerInfo(200) }
+    })
+  })
+
+  it('stores the last provider info for a profile without header info', async () => {
+    await expect(syncCurrentProfileProviderInfo()).resolves.toBe(true)
+    const item = await requireProfileItem('remote')
+    expect(item.extra).toEqual({ upload: 1, download: 2, total: 200, expire: 1800000000 })
+    expect(item.extraSource).toBe('provider')
+    // unchanged values are not rewritten
+    await expect(syncCurrentProfileProviderInfo()).resolves.toBe(false)
+  })
+
+  it('never overwrites info from the subscription-userinfo header', async () => {
+    const headerExtra = { upload: 9, download: 9, total: 9, expire: 9 }
+    await updateProfileItem({ ...(await requireProfileItem('remote')), extra: headerExtra })
+    await expect(syncCurrentProfileProviderInfo()).resolves.toBe(false)
+    expect((await requireProfileItem('remote')).extra).toEqual(headerExtra)
+  })
+
+  it('refreshes previously provider-derived info', async () => {
+    await updateProfileItem({
+      ...(await requireProfileItem('remote')),
+      extra: { upload: 0, download: 0, total: 1, expire: 0 },
+      extraSource: 'provider'
+    })
+    await expect(syncCurrentProfileProviderInfo()).resolves.toBe(true)
+    expect((await requireProfileItem('remote')).extra?.total).toBe(200)
   })
 })

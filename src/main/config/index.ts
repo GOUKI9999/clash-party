@@ -3,6 +3,7 @@ export { getControledMihomoConfig, patchControledMihomoConfig } from './controle
 export {
   getProfile,
   getCurrentProfileItem,
+  syncCurrentProfileProviderInfo,
   getProfileItem,
   getProfileConfig,
   getFileStr,
